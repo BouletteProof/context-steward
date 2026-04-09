@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "context-steward": {
+      "command": "npx",
+      "args": ["-y", "@bouletteproof/context-steward"],
+      "env": {
+        "SKILLS_DIR": "./skills"
+      }
+    },
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your-token-here"
+      }
+    }
+  }
+}
