@@ -26,13 +26,29 @@ Context-steward finds the relevant skill, returns it with a `contextId`, and con
 
 ### 2. Feedback loop
 
-After the task, report what happened:
+After the task, report what happened — not a score:
 
 ```
-report_outcome({ contextId: "abc123", score: 0.85, tool: "postgres:query" })
+report_outcome({
+  contextId: "abc123",
+  signal: "praised",
+  notes: "Clean decomposition, all types correct, user said 'perfect'"
+})
 ```
 
-Over time, high-scoring skills get prioritized, low-scoring skills get demoted:
+**Signals** are observable conversation events:
+
+| Signal | When to use | Derived score |
+|--------|-------------|---------------|
+| `praised` | User explicitly said good/great/perfect | 0.95 |
+| `used_as_is` | User accepted and moved to next topic | 0.70 |
+| `revised` | User asked for specific changes | 0.40 |
+| `rejected` | User said no, start over, dismissed output | 0.15 |
+| `redone_by_user` | User did it themselves after seeing attempt | 0.10 |
+
+Why signals instead of scores? Because Claude scoring its own work is unreliable. A model will always be generous with itself. Signals are binary observations: did the user accept it or not? Did they ask for changes or not? No subjectivity.
+
+Over time, skills accumulate signal history:
 
 ```
 $ context-steward scores
@@ -41,11 +57,9 @@ $ context-steward scores
   ─────────────────────────────────────────
   typescript        0.84   ↑      34
   frontend-design   0.71   →      22
-  coding            0.62   ↘      41
-  database          0.38   ↓      18    ← needs revision
+  coding            0.42   ↘      41  ← mostly revised
+  database          0.18   ↓      18  ← mostly rejected
 ```
-
-Continuous skill improvement driven by data, not opinions.
 
 ### 3. Works with any MCP server
 
@@ -96,8 +110,9 @@ Creates `.skills/` and `steward.config.json`. Drop your `SKILL.md` files into su
 
 | Tool | Description |
 |------|-------------|
-| `report_outcome` | Record quality score (0–1) for a skill delivery. |
+| `report_outcome` | Report what happened: `praised`, `used_as_is`, `revised`, `rejected`, `redone_by_user`. Drives skill improvement. |
 | `get_skill_scores` | View aggregated scores, trends, and tool pairings per skill. |
+| `import_scores` | Bridge external telemetry (CI, agent platforms) into skill improvement. |
 
 ## Writing skills
 
@@ -141,7 +156,35 @@ But dynamic loading — serving the right skill at the right moment, near the po
 
 ## Self-improving skills
 
-When `report_outcome` receives a low score (< 0.5) with notes about what went wrong, context-steward appends the learning directly to the SKILL.md file under a `## Learned` section. Next time that skill is served, it includes its own failure history. Skills improve themselves through use — no human edits a report, no human revises a skill.
+Skills learn from both success and failure through observable signals.
+
+When `report_outcome` receives `praised` with notes about what worked, context-steward appends a `[STRENGTH]` entry to the skill's `## Learned` section. When it receives `revised`, `rejected`, or `redone_by_user` with notes about what went wrong, it appends a `[WEAKNESS]` entry. `used_as_is` is recorded in the outcome store but doesn't modify the skill file — neutral outcomes are noise.
+
+Next time that skill is served, it includes its own history of what works and what doesn't.
+
+```markdown
+## Learned
+- [STRENGTH:2026-04-10] Score 0.95 on "api refactor": Clean decomposition into small focused edits with explicit file paths
+- [WEAKNESS:2026-04-10] Score 0.40 on "large file edit": Generated monolithic 300-line component without type hints
+```
+
+No human edits a report. No human revises a skill. The conversation itself is the data.
+
+## External telemetry bridge
+
+Context-steward can import scores from external systems (CI pipelines, agent platforms, quality scoring tools) via `import_scores`:
+
+```
+import_scores({
+  source: "ci-pipeline",
+  scores: [
+    { slug: "typescript", score: 0.92, notes: "All tests passed, clean decomposition" },
+    { slug: "database", score: 0.35, notes: "Query missing index, caused timeout" }
+  ]
+})
+```
+
+This bridges the gap between server-side telemetry and local skill files. The same `[STRENGTH]`/`[WEAKNESS]` entries are appended to the skill files.
 
 ## Telemetry
 

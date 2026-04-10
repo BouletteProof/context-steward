@@ -274,6 +274,37 @@ export interface PackResult {
 }
 
 // ---------------------------------------------------------------------------
+// Outcome signals (observable conversation events)
+// ---------------------------------------------------------------------------
+
+/**
+ * Observable signals from conversation flow that indicate skill effectiveness.
+ * These replace arbitrary 0-1 scores — Claude reports what happened, not what
+ * it thinks the score should be.
+ *
+ * - `praised`        — User explicitly said output was good ("perfect", "great", "exactly right")
+ * - `used_as_is`     — User accepted output and moved on without changes
+ * - `revised`        — User asked for specific changes (one or more revision rounds)
+ * - `rejected`       — User said no, start over, or explicitly dismissed the output
+ * - `redone_by_user` — User did it themselves after seeing Claude's attempt
+ * - `numeric`        — External system provided a numeric score (import_scores bridge)
+ */
+export type OutcomeSignal = 'praised' | 'used_as_is' | 'revised' | 'rejected' | 'redone_by_user' | 'numeric';
+
+/**
+ * Maps outcome signals to numeric scores for aggregation.
+ * These are internal — users never see or pick these numbers.
+ */
+export const SIGNAL_SCORES: Record<OutcomeSignal, number> = {
+  praised: 0.95,
+  used_as_is: 0.7,
+  revised: 0.4,
+  rejected: 0.15,
+  redone_by_user: 0.1,
+  numeric: 0,  // placeholder — actual score comes from import
+};
+
+// ---------------------------------------------------------------------------
 // Outcome tracking
 // ---------------------------------------------------------------------------
 
@@ -309,10 +340,18 @@ export interface OutcomeRecord {
   intent?: string;
 
   /**
-   * Numeric quality score for this outcome, typically in the range `[0, 1]`
-   * or `[0, 100]` depending on the scoring strategy in use.
+   * Numeric quality score for this outcome, typically in the range `[0, 1]`.
+   * When using signals, this is derived automatically from the signal type.
+   * When using import_scores, this is provided directly by the external system.
    */
   score: number;
+
+  /**
+   * Observable conversation signal that produced this score.
+   * Preferred over raw numeric scores because it's objective.
+   * @see OutcomeSignal
+   */
+  signal?: OutcomeSignal;
 
   /** Optional human-readable notes or observations about this outcome. */
   notes?: string;
