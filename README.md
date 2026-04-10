@@ -112,7 +112,7 @@ Creates `.skills/` and `steward.config.json`. Drop your `SKILL.md` files into su
 |------|-------------|
 | `report_outcome` | Report what happened: `praised`, `used_as_is`, `revised`, `rejected`, `redone_by_user`. Drives skill improvement. |
 | `get_skill_scores` | View aggregated scores, trends, and tool pairings per skill. |
-| `import_scores` | Bridge external telemetry (CI, agent platforms) into skill improvement. |
+| `import_scores` | Import external quality scores (CI, agent platforms) into skill improvement. Inbound only. |
 
 ## Writing skills
 
@@ -170,9 +170,9 @@ Next time that skill is served, it includes its own history of what works and wh
 
 No human edits a report. No human revises a skill. The conversation itself is the data.
 
-## External telemetry bridge
+## External score import
 
-Context-steward can import scores from external systems (CI pipelines, agent platforms, quality scoring tools) via `import_scores`:
+Context-steward can import scores from external systems (CI pipelines, agent platforms, quality scoring tools) via `import_scores`. No data leaves the system — this is inbound only.
 
 ```
 import_scores({
@@ -184,7 +184,7 @@ import_scores({
 })
 ```
 
-This bridges the gap between server-side telemetry and local skill files. The same `[STRENGTH]`/`[WEAKNESS]` entries are appended to the skill files.
+The same `[STRENGTH]`/`[WEAKNESS]` entries are appended to the skill files. Useful when you have a scoring system that runs outside the conversation (CI, automated reviews, production metrics).
 
 ## Telemetry
 
