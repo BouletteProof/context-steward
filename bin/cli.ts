@@ -8,14 +8,13 @@ const args = process.argv.slice(2);
 const cmd = args[0];
 
 function usage() {
-  console.log(`context-steward (Denethor) — Load skills dynamically. Learn what works.
+  console.log(`context-steward — Load skills dynamically. Learn what works.
 
   init              Create .skills/ and steward.config.json
   serve             Start MCP server (stdio)
   list              Show skills with token counts
   scores            Show skill effectiveness report
   estimate <file>   Estimate tokens for a file
-  telemetry [on|off] Toggle anonymous telemetry
   reset-scores      Clear all outcome data
   --help            Show this help
 `);
@@ -30,7 +29,7 @@ async function main() {
       const cp = resolve('steward.config.json');
       if (!existsSync(sd)) { mkdirSync(sd, { recursive: true }); console.log(`Created ${sd}/`); }
       if (!existsSync(cp)) {
-        writeFileSync(cp, JSON.stringify({ skillsDir: '.skills', defaultBudget: 100000, verbose: false, telemetry: true }, null, 2));
+        writeFileSync(cp, JSON.stringify({ skillsDir: '.skills', defaultBudget: 100000, verbose: false }, null, 2));
         console.log(`Created ${cp}`);
       }
       const bundled = join(__dirname, '..', 'skills');
@@ -75,20 +74,6 @@ async function main() {
       const { estimateTokens } = await import('../src/core/token-estimator.js');
       const c = readFileSync(resolve(args[1]), 'utf-8');
       console.log(`${estimateTokens(c)} tokens (${c.length} chars, ${c.split('\n').length} lines)`);
-      break;
-    }
-    case 'telemetry': {
-      const cp = resolve('steward.config.json');
-      if (!args[1]) {
-        const on = existsSync(cp) ? JSON.parse(readFileSync(cp, 'utf-8')).telemetry !== false : true;
-        console.log(`Telemetry: ${on ? 'on' : 'off'}\nSends weekly: skill count, call counts, avg budget, OS, Node version.\nNever sends: skill names, content, paths, scores, task text.`);
-        break;
-      }
-      if (!existsSync(cp)) { console.error('Run `context-steward init` first.'); process.exit(1); }
-      const cfg = JSON.parse(readFileSync(cp, 'utf-8'));
-      cfg.telemetry = args[1] === 'on';
-      writeFileSync(cp, JSON.stringify(cfg, null, 2));
-      console.log(`Telemetry ${args[1] === 'on' ? 'enabled' : 'disabled'}.`);
       break;
     }
     case 'reset-scores': {

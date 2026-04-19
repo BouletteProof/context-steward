@@ -447,20 +447,4 @@ export interface StewardConfig {
    * @default "~/.context-steward/"
    */
   dataDir?: string;
-
-  /**
-   * When `true`, context-steward sends a weekly anonymous ping with
-   * aggregate usage counts (skill count, load_skills calls, report_outcome
-   * calls, average token budget, OS + Node major version, sqlite vs memory mode).
-   *
-   * NO skill names, content, file paths, task descriptions, scores, or any
-   * user-generated text is ever transmitted.  No persistent user identifier
-   * is stored — each install is anonymous.
-   *
-   * Helps the maintainers understand adoption and improve the feedback loop.
-   * Disable via config or `CONTEXT_STEWARD_TELEMETRY=0` env var.
-   *
-   * @default true
-   */
-  telemetry?: boolean;
 }
