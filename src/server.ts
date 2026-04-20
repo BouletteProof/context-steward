@@ -1,6 +1,6 @@
 /**
  * @file server.ts
- * @description MCP server entry point for context-steward (Denethor).
+ * @description MCP server entry point for context-steward.
  * Registers all 7 tools via stdio transport.
  */
 
@@ -200,6 +200,6 @@ async function main() {
   const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[context-steward] Denethor running on stdio');
+  console.error('[context-steward] running on stdio');
 }
 main().catch(e => { console.error('[context-steward] Fatal:', e); process.exit(1); });
