@@ -1,6 +1,6 @@
 {
-  "name": "@bouletteproof/context-steward",
-  "version": "0.3.0",
+  "name": "context-steward",
+  "version": "0.3.1",
   "description": "Context management and skill injection for LLM applications",
   "type": "module",
   "main": "./dist/src/server.js",
@@ -12,16 +12,14 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "prepare": "npm run build"
   },
   "author": "bouletteproof",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "better-sqlite3": "^11.0.0"
-  },
-  "optionalDependencies": {
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.0.0",
