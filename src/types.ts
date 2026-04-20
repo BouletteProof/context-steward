@@ -447,4 +447,36 @@ export interface StewardConfig {
    * @default "~/.context-steward/"
    */
   dataDir?: string;
+
+  /**
+   * Absolute paths (or paths relative to process.cwd()) that are allowed
+   * to be read by tools accepting a user-supplied file path — currently
+   * `estimate_tokens` and `add_skill` (when using the `path` argument).
+   *
+   * The server rejects any read that resolves outside this list, preventing
+   * path-traversal reads of arbitrary files on the host (e.g. `/etc/passwd`,
+   * `~/.ssh/id_rsa`). Symlinks within an allowed directory that point outside
+   * it are also blocked.
+   *
+   * Defaults to `[process.cwd()]` when unset, which confines reads to the
+   * directory where the steward was started. Add entries explicitly if you
+   * need to estimate tokens on files outside that tree.
+   */
+  allowedReadDirs?: string[];
+
+  /**
+   * URL prefixes (exact string match against the start of the full URL) that
+   * `add_skill` is allowed to fetch from. Defaults to public raw-content
+   * hosts for Git forges:
+   *
+   * - `https://raw.githubusercontent.com/`
+   * - `https://gist.githubusercontent.com/`
+   * - `https://gitlab.com/` (raw paths)
+   * - `https://bitbucket.org/` (raw paths)
+   *
+   * All requests over HTTP, file://, or to arbitrary origins are rejected.
+   * This prevents server-side request forgery — fetching instance metadata,
+   * intranet services, or localhost admin endpoints via a crafted URL.
+   */
+  allowedUrlPrefixes?: string[];
 }
