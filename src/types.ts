@@ -120,6 +120,15 @@ export interface SkillDefinition {
    * Optional structured metadata accompanying the skill.
    */
   meta?: SkillMeta;
+
+  /**
+   * Absolute path to the SKILL.md file this definition was parsed from.
+   * Populated by {@link loadSkillsFromDirectory}; absent for skills
+   * constructed in-memory (e.g. during tests). Server code uses this to
+   * write back learnings to the exact source file without having to
+   * re-scan the skills directory on every update.
+   */
+  sourcePath?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { readFileSync, existsSync, writeFileSync, readdirSync, realpathSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, realpathSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { OutcomeStore } from './core/outcome-store.js';
 import { loadSkillsFromDirectory, addSkillFromUrl, addSkillFromPath } from './core/skill-loader.js';
@@ -161,6 +161,64 @@ function getAllowedUrlPrefixes(): string[] {
     : DEFAULT_URL_PREFIXES;
 }
 
+// ── Skills cache + slug index ──────────────────────────────────────────
+// loadSkillsFromDirectory walks the skills tree and parses every SKILL.md.
+// That's fine once per invocation, but the server calls it from list_skills,
+// load_skills, pack_context, and (transitively, via a duplicate directory
+// scan in pre-refactor improveSkill) every report_outcome. On a 50-skill
+// install with a busy session that added up to hundreds of redundant reads.
+//
+// The cache:
+//  - Populates lazily on first read.
+//  - Lives for SKILLS_CACHE_TTL_MS (backstop for external file changes
+//    like the operator editing a SKILL.md by hand; 30s is short enough
+//    that a manual edit is visible before people notice, long enough to
+//    collapse the within-request fan-out).
+//  - Is busted explicitly by invalidateSkillsCache() after add_skill and
+//    after improveSkill writes to disk — those are the code paths that
+//    *know* something changed.
+//
+// The slug → sourcePath map is the other half of the win: improveSkill
+// used to readdirSync + readFileSync every directory to match a slug,
+// which is O(N) per outcome call. Now it's a single Map lookup.
+
+interface SkillsCacheEntry {
+  skills: SkillDefinition[];
+  pathBySlug: Map<string, string>;
+  loadedAt: number;
+}
+
+let skillsCache: SkillsCacheEntry | null = null;
+const SKILLS_CACHE_TTL_MS = 30_000;
+
+function buildSkillsCacheEntry(sd: string): SkillsCacheEntry {
+  const skills = loadSkillsFromDirectory(sd);
+  const pathBySlug = new Map<string, string>();
+  for (const s of skills) {
+    if (s.sourcePath) pathBySlug.set(s.slug, s.sourcePath);
+  }
+  return { skills, pathBySlug, loadedAt: Date.now() };
+}
+
+function getSkillsCached(sd: string): SkillDefinition[] {
+  if (skillsCache && Date.now() - skillsCache.loadedAt < SKILLS_CACHE_TTL_MS) {
+    return skillsCache.skills;
+  }
+  skillsCache = buildSkillsCacheEntry(sd);
+  return skillsCache.skills;
+}
+
+function getSkillPath(sd: string, slug: string): string | undefined {
+  if (!skillsCache || Date.now() - skillsCache.loadedAt >= SKILLS_CACHE_TTL_MS) {
+    skillsCache = buildSkillsCacheEntry(sd);
+  }
+  return skillsCache.pathBySlug.get(slug);
+}
+
+function invalidateSkillsCache(): void {
+  skillsCache = null;
+}
+
 // ── Telemetry removed — open source, zero tracking ─────────────────────
 
 // ── Tool definitions ───────────────────────────────────────────────────
@@ -187,41 +245,41 @@ function improveSkill(slug: string, score: number, notes: string, intent?: strin
   if (safeNotes.length < 10) return;  // sanitizer may have stripped everything meaningful
   const safeIntent = sanitizeLearning(intent, INTENT_MAX_LEN);
   const sd = config.skillsDir || '.skills';
+
+  // O(1) slug → path lookup via the cached index. Replaces the pre-refactor
+  // readdirSync + per-directory readFileSync scan that used to run on every
+  // outcome. If the slug isn't known, the caller is reporting against a
+  // skill we never served — silently ignore so stale imports don't break.
+  const skillPath = getSkillPath(sd, slug);
+  if (!skillPath || !existsSync(skillPath)) return;
+
   try {
-    const dirs = readdirSync(sd, { withFileTypes: true }).filter(d => d.isDirectory());
-    for (const dir of dirs) {
-      const skillPath = join(sd, dir.name, 'SKILL.md');
-      if (!existsSync(skillPath)) continue;
-      const content = readFileSync(skillPath, 'utf-8');
-      const nameMatch = content.match(/^name:\s*(.+)$/m);
-      const skillSlug = (nameMatch?.[1]?.trim().toLowerCase().replace(/\s+/g, '-')) || dir.name;
-      if (skillSlug !== slug) continue;
+    const content = readFileSync(skillPath, 'utf-8');
+    const timestamp = new Date().toISOString().split('T')[0];
+    let entry: string;
 
-      const timestamp = new Date().toISOString().split('T')[0];
-      let entry: string;
-
-      if (score >= 0.8) {
-        // POSITIVE learning: what worked well
-        entry = `- [STRENGTH:${timestamp}] Score ${score.toFixed(2)}${safeIntent ? ` on "${safeIntent}"` : ''}: ${safeNotes}`;
-        console.error(`[context-steward] Skill strengthened: ${slug} — score ${score.toFixed(2)}`);
-      } else if (score < 0.5) {
-        // NEGATIVE learning: what went wrong
-        entry = `- [WEAKNESS:${timestamp}] Score ${score.toFixed(2)}${safeIntent ? ` on "${safeIntent}"` : ''}: ${safeNotes}`;
-        console.error(`[context-steward] Skill improved: ${slug} — appended learning from score ${score.toFixed(2)}`);
-      } else {
-        // Neutral (0.5-0.79): record but don't append to skill file
-        console.error(`[context-steward] Skill outcome recorded: ${slug} — score ${score.toFixed(2)} (neutral, no file change)`);
-        return;
-      }
-
-      if (content.includes('## Learned')) {
-        const updated = content.replace('## Learned', `## Learned\n${entry}`);
-        writeFileSync(skillPath, updated);
-      } else {
-        writeFileSync(skillPath, content.trimEnd() + `\n\n## Learned\n${entry}\n`);
-      }
+    if (score >= 0.8) {
+      // POSITIVE learning: what worked well
+      entry = `- [STRENGTH:${timestamp}] Score ${score.toFixed(2)}${safeIntent ? ` on "${safeIntent}"` : ''}: ${safeNotes}`;
+      console.error(`[context-steward] Skill strengthened: ${slug} — score ${score.toFixed(2)}`);
+    } else if (score < 0.5) {
+      // NEGATIVE learning: what went wrong
+      entry = `- [WEAKNESS:${timestamp}] Score ${score.toFixed(2)}${safeIntent ? ` on "${safeIntent}"` : ''}: ${safeNotes}`;
+      console.error(`[context-steward] Skill improved: ${slug} — appended learning from score ${score.toFixed(2)}`);
+    } else {
+      // Neutral (0.5-0.79): record but don't append to skill file
+      console.error(`[context-steward] Skill outcome recorded: ${slug} — score ${score.toFixed(2)} (neutral, no file change)`);
       return;
     }
+
+    if (content.includes('## Learned')) {
+      const updated = content.replace('## Learned', `## Learned\n${entry}`);
+      writeFileSync(skillPath, updated);
+    } else {
+      writeFileSync(skillPath, content.trimEnd() + `\n\n## Learned\n${entry}\n`);
+    }
+    // Content on disk has changed; next read should see the new learning.
+    invalidateSkillsCache();
   } catch (err) {
     console.error(`[context-steward] Skill improvement failed (non-fatal):`, err);
   }
@@ -235,7 +293,7 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
       const task = args.task as string;
       if (!task?.trim()) throw new Error('task is required');
       const budget = (args.budget as number) || config.defaultBudget || 100000;
-      const all = loadSkillsFromDirectory(sd);
+      const all = getSkillsCached(sd);
       const scores = outcomeStore ? scoreSkills(outcomeStore.getHistory()) : [];
       const matched = matchSkills(all, task, scores);
       const { kept } = budgetSkills(matched, Math.floor(budget * 0.25));
@@ -245,7 +303,7 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
       return { contextId, skills: kept, matched: matched.length, loaded: kept.length, tokensUsed };
     }
     case 'list_skills': {
-      const all = loadSkillsFromDirectory(sd);
+      const all = getSkillsCached(sd);
       const scores = outcomeStore ? scoreSkills(outcomeStore.getHistory()) : [];
       const sm = new Map(scores.map(s => [s.slug, s.meanScore]));
       return { skills: all.map(s => ({ slug: s.slug, name: s.name, triggers: s.triggers, tokenCount: estimateTokens(s.content), meanScore: sm.get(s.slug) ?? null })) };
@@ -253,11 +311,15 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     case 'add_skill': {
       if (args.url) {
         const safeUrl = assertUrlAllowed(args.url as string, getAllowedUrlPrefixes());
-        return { skill: await addSkillFromUrl(safeUrl, sd), savedTo: sd };
+        const skill = await addSkillFromUrl(safeUrl, sd);
+        invalidateSkillsCache();
+        return { skill, savedTo: sd };
       }
       if (args.path) {
         const safePath = assertPathAllowed(args.path as string, getAllowedReadDirs());
-        return { skill: addSkillFromPath(safePath, sd), savedTo: sd };
+        const skill = addSkillFromPath(safePath, sd);
+        invalidateSkillsCache();
+        return { skill, savedTo: sd };
       }
       throw new Error('url or path required');
     }
@@ -273,7 +335,7 @@ async function handleTool(name: string, args: Record<string, unknown>): Promise<
     case 'pack_context': {
       const b = { maxTokens: (args.budget as number) || config.defaultBudget || 100000 };
       const input = { system: args.system as string, messages: args.messages as any[], skills: [] as SkillDefinition[], tools: [] as any[] };
-      if (args.autoLoadSkills) input.skills = loadSkillsFromDirectory(sd);
+      if (args.autoLoadSkills) input.skills = getSkillsCached(sd);
       return packContext(input, b);
     }
     case 'report_outcome': {

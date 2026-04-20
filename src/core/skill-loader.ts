@@ -231,6 +231,7 @@ function parseSkillFile(rawText: string, filePath: string): SkillDefinition | nu
       name,
       content,
       triggers,
+      sourcePath: filePath,
     };
 
     if (priority !== undefined) {
