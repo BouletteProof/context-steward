@@ -458,6 +458,22 @@ export interface StewardConfig {
   dataDir?: string;
 
   /**
+   * Controls on-disk recording of outcomes and skill-file learning.
+   *
+   * When `true` (default) — the server records every report_outcome call
+   * to SQLite at {@link StewardConfig.dataDir} and appends
+   * `[STRENGTH]` / `[WEAKNESS]` entries to matched SKILL.md files. Local-
+   * only; nothing transmits over the network. Powers the learning loop.
+   *
+   * When `false` — the server runs ephemerally. Outcomes live in memory
+   * only; no SQLite file is created; SKILL.md files are not modified.
+   * Intended for users who want skill-routing without any on-disk trace.
+   *
+   * @default true
+   */
+  persistence?: boolean;
+
+  /**
    * Absolute paths (or paths relative to process.cwd()) that are allowed
    * to be read by tools accepting a user-supplied file path — currently
    * `estimate_tokens` and `add_skill` (when using the `path` argument).

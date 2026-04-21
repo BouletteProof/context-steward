@@ -267,12 +267,25 @@ function findSkillFiles(rootDir: string): string[] {
 
   for (const entry of entries) {
     const fullPath = path.join(rootDir, entry.name);
-    if (entry.isDirectory()) {
+    // Resolve symlinks so user-symlinked skill dirs and SKILL.md files
+    // are treated the same as real ones. Dangling symlinks are skipped.
+    let isDir = entry.isDirectory();
+    let isFile = entry.isFile();
+    if (entry.isSymbolicLink()) {
+      try {
+        const resolved = fs.statSync(fullPath);
+        isDir = resolved.isDirectory();
+        isFile = resolved.isFile();
+      } catch {
+        continue;
+      }
+    }
+    if (isDir) {
       const nested = findSkillFiles(fullPath);
       for (const p of nested) {
         results.push(p);
       }
-    } else if (entry.isFile() && entry.name === 'SKILL.md') {
+    } else if (isFile && entry.name === 'SKILL.md') {
       results.push(fullPath);
     }
   }

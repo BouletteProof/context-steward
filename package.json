@@ -1,6 +1,6 @@
 {
   "name": "context-steward",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Context management and skill injection for LLM applications",
   "type": "module",
   "main": "./dist/src/server.js",

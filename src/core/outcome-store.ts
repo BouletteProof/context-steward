@@ -25,7 +25,13 @@ export class OutcomeStore {
    * Initializes the outcome store.
    * @param dbPath Optional filesystem path for the SQLite database.
    */
-  constructor(dbPath?: string) {
+  constructor(dbPath?: string, persistent: boolean = true) {
+    if (!persistent) {
+      // Explicit opt-out: no disk access, no warning, session-only.
+      this.useMemory = true;
+      return;
+    }
+
     const resolvedPath = dbPath || path.join(os.homedir(), '.context-steward', 'outcomes.db');
 
     try {
