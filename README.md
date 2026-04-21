@@ -67,34 +67,134 @@ $ context-steward scores
 
 ## Install
 
-```
-npx context-steward init
-```
+Prerequisites: Node.js ≥ 18, and one of Claude Code, Cursor, or Claude Desktop.
 
-Creates `.skills/` and `steward.config.json`. Drop your `SKILL.md` files into subdirectories.
-
-context-steward sits alongside your existing MCP servers:
+### Step 1 — Install the package
 
 ```
+npm install -g context-steward
+context-steward --help     # smoke test; should print the banner
+```
+
+### Step 2 — Create a workspace
+
+```
+mkdir my-agent-workspace && cd my-agent-workspace
+context-steward init
+```
+
+`init` creates `.skills/` and `steward.config.json` in the current directory. It does not bundle any skills — you bring your own (see [Working with your own skills](#working-with-your-own-skills) below).
+
+### Step 3 — Author or import at least one skill
+
+Either write one by hand:
+
+```
+mkdir -p .skills/auth
+cat > .skills/auth/SKILL.md <<'EOF'
+---
+name: auth
+description: Authentication patterns
+triggers: [auth, login, jwt, oauth]
+---
+# Auth
+- Prefer JWT over session cookies for stateless APIs
+- Hash passwords with argon2 or bcrypt
+- Rotate tokens on privilege escalation
+EOF
+```
+
+…or point the config at your existing skills library (see the next section).
+
+### Step 4 — Register with your MCP client
+
+Pick your client below. Each sets up `context-steward serve` as an MCP server rooted at `my-agent-workspace` so it finds your `.skills/` and config.
+
+**Claude Code**
+
+```
+claude mcp add context-steward -- context-steward serve
+claude
+```
+
+In the Claude Code session, verify:
+
+> *"What context-steward tools do you have available?"*
+
+Expect all 8 tools: `load_skills`, `list_skills`, `add_skill`, `estimate_tokens`, `pack_context`, `report_outcome`, `get_skill_scores`, `import_scores`.
+
+**Cursor**
+
+Edit `~/.cursor/mcp.json` (or `.cursor/mcp.json` in your project root):
+
+```json
 {
   "mcpServers": {
     "context-steward": {
       "command": "npx",
-      "args": ["context-steward", "serve"]
-    },
-    "postgres": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
-    },
-    "github": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-github"]
+      "args": ["-y", "context-steward", "serve"],
+      "cwd": "/absolute/path/to/my-agent-workspace"
     }
   }
 }
 ```
 
-Your agent loads the right skill *before* calling the right tool. context-steward doesn't know or care what your other servers do.
+`cwd` must be absolute and must point at the directory containing your `steward.config.json`. Restart Cursor. The MCP status indicator should show the server as connected.
+
+**Claude Desktop**
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS (similar paths on Windows and Linux — see Anthropic's docs):
+
+```json
+{
+  "mcpServers": {
+    "context-steward": {
+      "command": "npx",
+      "args": ["-y", "context-steward", "serve"],
+      "cwd": "/absolute/path/to/my-agent-workspace"
+    }
+  }
+}
+```
+
+Fully quit Claude Desktop (⌘Q, not just close the window) and reopen. The tool icon in the chat input should show MCP tools available.
+
+### Step 5 — Verify end-to-end
+
+In any client:
+
+> *"Call load_skills with task 'refactor the auth module'. What came back?"*
+
+Expect a response with `contextId`, the `auth` skill's content, and non-zero `tokensUsed`. If `matched: 0`, either your skills directory is empty or your triggers don't match the task — check `context-steward list` to see what the server can see.
+
+## Working with your own skills
+
+Most people arrive at context-steward with skills already in hand — Cursor rules, Claude Desktop skills, internal style guides, markdown cheat sheets. You don't have to rewrite them. Four ways to wire them up, ranked by scenario:
+
+| Scenario | Approach | How |
+|---|---|---|
+| One project, skills live with it | **Author in place** | `mkdir -p .skills/<slug> && edit .skills/<slug>/SKILL.md` |
+| Central skills library, same everywhere | **Point the config at it** | Set `"skillsDir": "/path/to/your/skills"` in `steward.config.json` |
+| Central library, pick-and-choose per project | **Per-skill symlinks** | `ln -s ~/skills/auth .skills/auth` |
+| Starting from someone else's skills | **Copy and edit** | `cp -r ~/their-skills/auth .skills/auth` |
+
+Symlinks and the `skillsDir` config field are both fully supported as of v0.3.2. The loader resolves symlinks via `stat`, so per-skill symlinks and symlinked SKILL.md files are treated exactly like real ones. Dangling symlinks are skipped silently rather than crashing the listing.
+
+Skills must follow the Anthropic v2 SKILL.md format — a YAML front-matter block with at minimum `name` and `description`, followed by markdown body. Triggers are auto-extracted from the description unless you declare them:
+
+```
+---
+name: database-conventions
+description: SQL naming conventions and query patterns for PostgreSQL.
+triggers: [sql, postgres, migration, schema, database]
+---
+
+# Database Conventions
+
+- Tables: plural snake_case
+- Always parameterize inputs
+- Add EXPLAIN ANALYZE for queries touching >10K rows
+```
 
 ## MCP tools
 
@@ -115,29 +215,6 @@ Your agent loads the right skill *before* calling the right tool. context-stewar
 | `report_outcome` | Report what happened: `praised`, `used_as_is`, `revised`, `rejected`, `redone_by_user`. Drives skill improvement. |
 | `get_skill_scores` | View aggregated scores, trends, and tool pairings per skill. |
 | `import_scores` | Import external quality scores (CI, agent platforms) into skill improvement. Inbound only. |
-
-## Writing skills
-
-Skills use the Anthropic v2 format — same as Claude's native skills:
-
-```
----
-name: database-conventions
-description: SQL naming conventions and query patterns for PostgreSQL.
----
-
-# Database Conventions
-
-- Tables: plural snake_case
-- Always parameterize inputs
-- Add EXPLAIN ANALYZE for queries touching >10K rows
-```
-
-Triggers are auto-extracted from the description. Or declare them:
-
-```
-triggers: [sql, postgres, migration, schema, database]
-```
 
 ## Token budgets
 
@@ -197,7 +274,6 @@ The same `[STRENGTH]`/`[WEAKNESS]` entries are appended to the skill files. Usef
 | Learning from outcomes | Yes, via signals | No | No | No |
 | External score import | Yes | No | No | No |
 | Works across LLMs | Yes (MCP) | Claude only | Cursor only | Yes |
-| Telemetry | None | — | — | — |
 
 Native Claude skills are a good starting point if you're Claude-only and don't need feedback. context-steward adds the portable MCP surface, the lazy-load mechanism, and the learning loop.
 
@@ -210,7 +286,26 @@ Native Claude skills are a good starting point if you're Claude-only and don't n
 
 ## Telemetry
 
-None. Zero tracking. Fully open source.
+None — the server phones no home. No outbound HTTP, no analytics, no third-party transmission.
+
+It *does* keep a local record of what you asked and how it went, because that's what powers the learning loop. Specifically:
+
+- Outcome rows live in `~/.context-steward/outcomes.db` (SQLite) — one row per `report_outcome` call, containing the context id, matched skill slugs, signal, derived score, your `intent`, and your `notes`.
+- Learnings append to your `SKILL.md` files as dated `[STRENGTH]` / `[WEAKNESS]` entries under a `## Learned` section, including the notes you provided.
+
+Both are yours. `context-steward reset-scores` clears the SQLite database. Skill files are just files in your workspace — edit or delete them like any other markdown.
+
+If you don't want any local history — for example you're running this inside an agent handling sensitive client work — set `persistence: false` in `steward.config.json`:
+
+```json
+{
+  "skillsDir": ".skills",
+  "defaultBudget": 100000,
+  "persistence": false
+}
+```
+
+In ephemeral mode no SQLite file is created, no skill-file writes happen, and nothing survives process restart. You lose the learning loop in exchange; skill routing still works, but scores don't accumulate. The startup log reports ephemeral status so you can verify.
 
 ## CLI
 

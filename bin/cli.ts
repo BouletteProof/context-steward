@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, writeFileSync, readFileSync, cpSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,14 +32,8 @@ async function main() {
         writeFileSync(cp, JSON.stringify({ skillsDir: '.skills', defaultBudget: 100000, verbose: false }, null, 2));
         console.log(`Created ${cp}`);
       }
-      const bundled = join(__dirname, '..', 'skills');
-      if (existsSync(bundled)) {
-        for (const d of readdirSync(bundled, { withFileTypes: true }).filter(d => d.isDirectory())) {
-          const t = join(sd, d.name);
-          if (!existsSync(t)) { try { cpSync(join(bundled, d.name), t, { recursive: true }); console.log(`  Copied: ${d.name}`); } catch {} }
-        }
-      }
-      console.log('\nDone. Add skills to .skills/<name>/SKILL.md');
+      console.log('\nNext: add skills to .skills/<slug>/SKILL.md');
+      console.log('See README for the SKILL.md format and examples.');
       break;
     }
     case 'serve': {

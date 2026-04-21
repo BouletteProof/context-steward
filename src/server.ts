@@ -239,6 +239,7 @@ const TOOLS = [
 // Next time it's served, the learned section is part of the content.
 function improveSkill(slug: string, score: number, notes: string, intent?: string) {
   if (!notes || notes.length < 10) return; // need meaningful notes either way
+  if (config.persistence === false) return; // user opted out of on-disk learning
   // Sanitize untrusted inputs before they touch disk. See sanitizeLearning() comment —
   // this is the defense against persistent prompt-injection via the feedback channel.
   const safeNotes = sanitizeLearning(notes, NOTES_MAX_LEN);
@@ -411,10 +412,15 @@ export function createServer(): Server {
 async function main() {
   const cp = join(process.cwd(), 'steward.config.json');
   if (existsSync(cp)) { try { config = { ...config, ...JSON.parse(readFileSync(cp, 'utf-8')) }; } catch {} }
-  outcomeStore = new OutcomeStore(config.dataDir);
+  const persistent = config.persistence !== false;
+  outcomeStore = new OutcomeStore(config.dataDir, persistent);
   const server = createServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[context-steward] running on stdio');
+  if (!persistent) {
+    console.error('[context-steward] running on stdio — ephemeral mode (no disk persistence)');
+  } else {
+    console.error('[context-steward] running on stdio');
+  }
 }
 main().catch(e => { console.error('[context-steward] Fatal:', e); process.exit(1); });
