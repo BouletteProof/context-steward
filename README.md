@@ -4,6 +4,8 @@
 
 MCP server for Claude Desktop, Claude Code, and Cursor.
 
+> Read the companion write-up: [context-steward — lazy skill loading for agent systems](https://bouletteproof.com/writing/context-steward/) — why the problem matters, what the loading policy does, and where this came from.
+
 ---
 
 ## The problem
@@ -223,7 +225,12 @@ context-steward estimate <file>   # Token estimate
 context-steward reset-scores      # Clear outcome data
 ```
 
-Built and maintained by [Bouletteproof](https://bouletteproof.com).
+Built and maintained by [Bouletteproof](https://bouletteproof.com/).
+
+## Further reading
+
+- [Why context-steward exists](https://bouletteproof.com/writing/context-steward/) — companion article.
+- [Bouletteproof — writing index](https://bouletteproof.com/writing/) — practitioner notes from production, including the forthcoming essay on why per-job quality scores in multi-agent systems cluster around 85% ("The 85% Accuracy Trap") and what that number actually tells you.
 
 ## License
 
