@@ -1,0 +1,37 @@
+Metadata-Version: 2.4
+Name: context-steward
+Version: 0.1.0
+Summary: Universal LLM Context Optimization - 90% Token Reduction
+Author-email: Bouletteproof <hello@bouletteproof.com>
+License: MIT
+Project-URL: Homepage, https://github.com/bouletteproof/context-steward
+Project-URL: Documentation, https://github.com/bouletteproof/context-steward#readme
+Project-URL: Repository, https://github.com/bouletteproof/context-steward.git
+Project-URL: Issues, https://github.com/bouletteproof/context-steward/issues
+Keywords: llm,token,optimization,context,openai,anthropic,claude,gpt,gemini,ollama,ai
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: tiktoken>=0.5.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+Requires-Dist: black>=23.0.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: mypy>=1.0.0; extra == "dev"
+Provides-Extra: openai
+Requires-Dist: openai>=1.0.0; extra == "openai"
+Provides-Extra: anthropic
+Requires-Dist: anthropic>=0.18.0; extra == "anthropic"
+Provides-Extra: all
+Requires-Dist: openai>=1.0.0; extra == "all"
+Requires-Dist: anthropic>=0.18.0; extra == "all"
+Requires-Dist: httpx>=0.25.0; extra == "all"

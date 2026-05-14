@@ -1,0 +1,89 @@
+{
+  "name": "context-steward",
+  "version": "0.1.0",
+  "description": "Universal LLM Context Optimization - 90% Token Reduction",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./express": {
+      "import": "./dist/integrations/express.mjs",
+      "require": "./dist/integrations/express.js"
+    },
+    "./mcp": {
+      "import": "./dist/integrations/mcp.mjs",
+      "require": "./dist/integrations/mcp.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "llm",
+    "token",
+    "optimization",
+    "context",
+    "openai",
+    "anthropic",
+    "claude",
+    "gpt",
+    "gemini",
+    "ollama",
+    "mcp",
+    "ai",
+    "cost-reduction"
+  ],
+  "author": "Bouletteproof <hello@bouletteproof.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bouletteproof/context-steward.git"
+  },
+  "homepage": "https://github.com/bouletteproof/context-steward#readme",
+  "bugs": {
+    "url": "https://github.com/bouletteproof/context-steward/issues"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "tiktoken": "^1.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0",
+    "eslint": "^8.55.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0"
+  },
+  "peerDependencies": {
+    "express": ">=4.0.0",
+    "@modelcontextprotocol/sdk": ">=0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    },
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    }
+  }
+}
