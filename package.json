@@ -1,6 +1,6 @@
 {
   "name": "context-steward",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "Universal LLM Context Optimization - 90% Token Reduction",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
