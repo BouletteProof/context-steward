@@ -1,379 +1,325 @@
-# Context Steward
+# context-steward
 
-> **Universal LLM Context Optimization - 90% Token Reduction**
+**Load skills dynamically. Learn what works. Works with any LLM.**
 
-[![npm](https://img.shields.io/npm/v/context-steward)](https://www.npmjs.com/package/context-steward)
-[![PyPI](https://img.shields.io/pypi/v/context-steward)](https://pypi.org/project/context-steward/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+MCP server for Claude Desktop, Claude Code, and Cursor.
 
-A lightweight, LLM-agnostic library that dramatically reduces token usage while maintaining response quality. Works with OpenAI, Anthropic, Google, Ollama, vLLM, and any OpenAI-compatible API.
+---
 
-## 🎯 Problem
+## The problem
 
-LLM context windows are expensive real estate:
-- **Tool schemas** consume 500-2000 tokens each before you even ask a question
-- **Large results** (API responses, file contents) bloat context unnecessarily  
-- **Conversation history** grows unbounded
-- **Redundant text** wastes tokens on filler words and verbose phrases
+You have 10 skill files. Your agent loads all of them into the system prompt. That's 15,000 tokens burned before the task starts — whether the agent reads them or not.
 
-## ✨ Solution
+On a 32K model, that's 47% of your context gone. And you have no idea which skills actually help.
 
-Context Steward applies four optimization strategies:
+## How it works
 
-| Strategy | Reduction | Method |
-|----------|-----------|--------|
-| **Text Optimization** | 30-50% | Remove filler, simplify phrases |
-| **File Externalization** | 50-80% | Store large results in temp files, return summaries |
-| **Tool Consolidation** | 40-60% | Compress schemas, group related tools |
-| **Context Management** | 20-40% | Sliding window, smart history pruning |
+### Lazy loading
 
-**Combined effect: 70-90% token reduction**
+Skills are MCP tools. Zero skill content in the initial prompt.
 
-## 🚀 Quick Start
+When your agent hits a task, it calls:
 
-### JavaScript/TypeScript
-
-```bash
-npm install context-steward
+```
+load_skills({ task: "refactor the auth module" })
 ```
 
-```typescript
-import { ContextSteward } from 'context-steward';
+context-steward finds the relevant skill, returns it with a `contextId`, and content enters context only when needed — right before generation. The `contextId` is a handle: pass it back later to link outcome feedback to the specific skill that was used.
 
-const steward = new ContextSteward({
-  strategy: 'balanced',  // 'conservative' | 'balanced' | 'aggressive'
-  maxContextTokens: 4000,
-  tempDir: '/tmp/context-steward'
-});
+### Feedback loop
 
-// Optimize a prompt
-const optimized = await steward.optimize({
-  text: "Please kindly help me to write a very detailed analysis...",
-  preserveTerms: ['API', 'REST', 'GraphQL']
-});
+After the task, report what happened — not a score:
 
-console.log(optimized.stats);
-// { originalTokens: 1200, optimizedTokens: 340, reduction: '72%' }
-
-// Externalize large tool results
-const result = await steward.externalize({
-  toolName: 'list_files',
-  result: largeFileList,  // 50KB JSON
-  summaryPrompt: 'List file names and sizes, highlight errors'
-});
-// Returns: { summary: "12 files, 3 errors...", filePath: "/tmp/cs/result_abc.json" }
-
-// Manage conversation context
-steward.addMessage({ role: 'user', content: userMessage });
-steward.addMessage({ role: 'assistant', content: response });
-const context = steward.getOptimizedContext({ maxTokens: 2000 });
+```
+report_outcome({
+  contextId: "abc123",
+  signal: "praised",
+  notes: "Clean decomposition, all types correct, user said 'perfect'"
+})
 ```
 
-### Python
+**Signals** are observable conversation events:
 
-```bash
-pip install context-steward
+| Signal | When to use | Derived score |
+| --- | --- | --- |
+| `praised` | User explicitly said good/great/perfect | 0.95 |
+| `used_as_is` | User accepted and moved to the next topic | 0.70 |
+| `revised` | User asked for specific changes | 0.40 |
+| `rejected` | User said no, start over, dismissed output | 0.15 |
+| `redone_by_user` | User did it themselves after seeing the attempt | 0.10 |
+
+Why signals instead of scores? Because a model scoring its own work is unreliable — it will always be generous with itself. Signals are binary observations: did the user accept it or not? Did they ask for changes or not? No subjectivity in the observation.
+
+The "derived score" column is a deterministic mapping used only for aggregation and ranking. It's not a judgment; it's a sort key.
+
+Over time, skills accumulate signal history:
+
+```
+$ context-steward scores
+
+  slug              mean   trend  outcomes
+  ─────────────────────────────────────────
+  typescript        0.84   ↑      34
+  frontend-design   0.71   →      22
+  coding            0.42   ↘      41  ← mostly revised
+  database          0.18   ↓      18  ← mostly rejected
 ```
 
-```python
-from context_steward import ContextSteward
+## Install
 
-steward = ContextSteward(
-    strategy='balanced',
-    max_context_tokens=4000
-)
+Prerequisites: Node.js ≥ 18, and one of Claude Code, Cursor, or Claude Desktop.
 
-# Optimize a prompt
-result = steward.optimize(
-    text="Please kindly help me to write a very detailed analysis...",
-    preserve_terms=['API', 'REST', 'GraphQL']
-)
+### Step 1 — Install the package
 
-print(result.stats)
-# {'original_tokens': 1200, 'optimized_tokens': 340, 'reduction': '72%'}
+```
+npm install -g context-steward
+context-steward --help     # smoke test; should print the banner
 ```
 
-## 🔧 Core Features
+### Step 2 — Create a workspace
 
-### 1. Text Optimizer
-
-Removes redundant language while preserving meaning:
-
-```typescript
-// Before (847 tokens)
-"I would really appreciate it if you could please help me to understand 
-in detail how to properly implement a REST API that is designed to be 
-very performant and highly scalable..."
-
-// After (312 tokens)  
-"Help me implement a performant, scalable REST API..."
+```
+mkdir my-agent-workspace && cd my-agent-workspace
+context-steward init
 ```
 
-**Configurable strategies:**
-- `conservative`: Minimal changes, safe for all content
-- `balanced`: Good reduction, maintains readability (default)
-- `aggressive`: Maximum reduction, may affect style
+`init` creates `.skills/` and `steward.config.json` in the current directory. It does not bundle any skills — you bring your own (see [Working with your own skills](#working-with-your-own-skills) below).
 
-### 2. File Externalizer
+### Step 3 — Author or import at least one skill
 
-Large tool results stay out of context:
+Either write one by hand:
 
-```typescript
-const steward = new ContextSteward();
-
-// Tool returns 50KB of deployment data
-const deployments = await myTool.listDeployments();
-
-// Externalize: store full data, return summary
-const { summary, filePath } = await steward.externalize({
-  toolName: 'list_deployments',
-  result: deployments,
-  filter: { state: 'ERROR' },  // Optional: filter before summarizing
-  maxSummaryTokens: 500
-});
-
-// summary: "23 deployments. 3 errors: [deploy-abc: timeout, ...]"
-// filePath: "/tmp/context-steward/deployments_1234.json"
-
-// Later, if Claude needs details:
-const fullData = await steward.recall(filePath);
+```
+mkdir -p .skills/auth
+cat > .skills/auth/SKILL.md <<'EOF'
+---
+name: auth
+description: Authentication patterns
+triggers: [auth, login, jwt, oauth]
+---
+# Auth
+- Prefer JWT over session cookies for stateless APIs
+- Hash passwords with argon2 or bcrypt
+- Rotate tokens on privilege escalation
+EOF
 ```
 
-### 3. Tool Consolidator
+…or point the config at your existing skills library (see the next section).
 
-Compress and group tool schemas:
+### Step 4 — Register with your MCP client
 
-```typescript
-// Before: 20 tools × 500 tokens = 10,000 tokens
-const tools = [
-  { name: 'tavily_search', ... },  // 500 tokens
-  { name: 'brave_search', ... },   // 500 tokens
-  { name: 'google_search', ... },  // 500 tokens
-  // ... 17 more tools
-];
+Pick your client below. Each sets up `context-steward serve` as an MCP server rooted at `my-agent-workspace` so it finds your `.skills/` and config.
 
-// After: 8 consolidated tools × 300 tokens = 2,400 tokens
-const optimizedTools = steward.consolidateTools(tools, {
-  groupBy: 'category',
-  maxTokensPerTool: 300
-});
-// { name: 'web_search', params: { provider: 'tavily'|'brave'|'google', ... }}
+**Claude Code**
+
+```
+claude mcp add context-steward -- context-steward serve
+claude
 ```
 
-### 4. Context Manager
+In the Claude Code session, verify:
 
-Smart conversation history with sliding window:
+> *"What context-steward tools do you have available?"*
 
-```typescript
-const steward = new ContextSteward({
-  maxContextTokens: 4000,
-  reserveTokens: 1000,  // Reserve for response
-  pruneStrategy: 'smart'  // 'fifo' | 'smart' | 'summarize'
-});
+Expect all 8 tools: `load_skills`, `list_skills`, `add_skill`, `estimate_tokens`, `pack_context`, `report_outcome`, `get_skill_scores`, `import_scores`.
 
-// Add messages as conversation progresses
-steward.addMessage({ role: 'user', content: '...' });
-steward.addMessage({ role: 'assistant', content: '...' });
+**Cursor**
 
-// Get optimized context that fits budget
-const messages = steward.getOptimizedContext();
-// Older messages summarized, recent messages preserved
-```
+Edit `~/.cursor/mcp.json` (or `.cursor/mcp.json` in your project root):
 
-## 📊 LLM Adapters
-
-Works with any LLM through adapters:
-
-```typescript
-import { ContextSteward, OpenAIAdapter, OllamaAdapter } from 'context-steward';
-
-// OpenAI
-const openai = new ContextSteward({
-  adapter: new OpenAIAdapter({ model: 'gpt-4' })
-});
-
-// Anthropic
-const claude = new ContextSteward({
-  adapter: new AnthropicAdapter({ model: 'claude-3-sonnet' })
-});
-
-// Ollama (local)
-const ollama = new ContextSteward({
-  adapter: new OllamaAdapter({ 
-    host: 'http://localhost:11434',
-    model: 'deepseek-coder-v2:16b'
-  })
-});
-
-// Any OpenAI-compatible API
-const custom = new ContextSteward({
-  adapter: new OpenAIAdapter({
-    baseUrl: 'https://your-api.com/v1',
-    apiKey: 'your-key',
-    model: 'your-model'
-  })
-});
-```
-
-## 📈 Telemetry
-
-Track your savings:
-
-```typescript
-const steward = new ContextSteward({ telemetry: true });
-
-// After some usage...
-const stats = steward.getStats();
-
-console.log(stats);
-// {
-//   totalRequests: 150,
-//   tokensOriginal: 450000,
-//   tokensOptimized: 67500,
-//   tokensSaved: 382500,
-//   reductionPercent: 85,
-//   estimatedCostSaved: '$38.25',  // Based on model pricing
-//   cacheHits: 45,
-//   externalizedResults: 23
-// }
-```
-
-## 🔌 Integrations
-
-### MCP Server
-
-Use as an MCP server for Claude Desktop:
-
-```bash
-npx context-steward serve --port 6000
-```
-
-Add to Claude Desktop config:
 ```json
 {
   "mcpServers": {
     "context-steward": {
       "command": "npx",
-      "args": ["context-steward", "serve"]
+      "args": ["-y", "context-steward", "serve"],
+      "cwd": "/absolute/path/to/my-agent-workspace"
     }
   }
 }
 ```
 
-### Express Middleware
+`cwd` must be absolute and must point at the directory containing your `steward.config.json`. Restart Cursor. The MCP status indicator should show the server as connected.
 
-```typescript
-import express from 'express';
-import { contextStewardMiddleware } from 'context-steward/express';
+**Claude Desktop**
 
-const app = express();
-app.use(contextStewardMiddleware({ strategy: 'balanced' }));
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS (similar paths on Windows and Linux — see Anthropic's docs):
+
+```json
+{
+  "mcpServers": {
+    "context-steward": {
+      "command": "npx",
+      "args": ["-y", "context-steward", "serve"],
+      "cwd": "/absolute/path/to/my-agent-workspace"
+    }
+  }
+}
 ```
 
-### LangChain
+Fully quit Claude Desktop (⌘Q, not just close the window) and reopen. The tool icon in the chat input should show MCP tools available.
 
-```typescript
-import { ContextStewardRetriever } from 'context-steward/langchain';
+### Step 5 — Verify end-to-end
 
-const retriever = new ContextStewardRetriever({
-  steward: new ContextSteward(),
-  baseRetriever: vectorStoreRetriever
-});
+In any client:
+
+> *"Call load_skills with task 'refactor the auth module'. What came back?"*
+
+Expect a response with `contextId`, the `auth` skill's content, and non-zero `tokensUsed`. If `matched: 0`, either your skills directory is empty or your triggers don't match the task — check `context-steward list` to see what the server can see.
+
+## Working with your own skills
+
+Most people arrive at context-steward with skills already in hand — Cursor rules, Claude Desktop skills, internal style guides, markdown cheat sheets. You don't have to rewrite them. Four ways to wire them up, ranked by scenario:
+
+| Scenario | Approach | How |
+|---|---|---|
+| One project, skills live with it | **Author in place** | `mkdir -p .skills/<slug> && edit .skills/<slug>/SKILL.md` |
+| Central skills library, same everywhere | **Point the config at it** | Set `"skillsDir": "/path/to/your/skills"` in `steward.config.json` |
+| Central library, pick-and-choose per project | **Per-skill symlinks** | `ln -s ~/skills/auth .skills/auth` |
+| Starting from someone else's skills | **Copy and edit** | `cp -r ~/their-skills/auth .skills/auth` |
+
+Symlinks and the `skillsDir` config field are both fully supported as of v0.3.2. The loader resolves symlinks via `stat`, so per-skill symlinks and symlinked SKILL.md files are treated exactly like real ones. Dangling symlinks are skipped silently rather than crashing the listing.
+
+Skills must follow the Anthropic v2 SKILL.md format — a YAML front-matter block with at minimum `name` and `description`, followed by markdown body. Triggers are auto-extracted from the description unless you declare them:
+
 ```
-
-## ⚙️ Configuration
-
-```typescript
-const steward = new ContextSteward({
-  // Optimization strategy
-  strategy: 'balanced',  // 'conservative' | 'balanced' | 'aggressive'
-  
-  // Token limits
-  maxContextTokens: 4000,
-  reserveTokens: 1000,
-  
-  // File externalization
-  tempDir: '/tmp/context-steward',
-  maxFileSizeMB: 10,
-  cleanupAfterHours: 24,
-  
-  // Preserve important terms
-  preserveTerms: ['API', 'error', 'warning'],
-  preservePatterns: [/\b[A-Z]{2,}\b/g],  // Preserve acronyms
-  
-  // Context management
-  pruneStrategy: 'smart',
-  systemMessageBudget: 500,
-  
-  // Tool consolidation
-  consolidateTools: true,
-  maxToolTokens: 300,
-  
-  // Telemetry
-  telemetry: true,
-  telemetryEndpoint: 'https://your-analytics.com/events',
-  
-  // LLM adapter (for token counting)
-  adapter: new OpenAIAdapter({ model: 'gpt-4' })
-});
-```
-
-## 🏗️ Use Cases
-
-### 1. AI Coding Assistant
-
-```typescript
-// Reduce codebase context for code review
-const context = await steward.optimizeCodeContext({
-  files: projectFiles,
-  focusFile: 'src/api/users.ts',
-  includeTypes: true,
-  includeTests: false
-});
-// Returns: interfaces, function signatures, focused file content
-```
-
-### 2. Document Q&A
-
-```typescript
-// Large document → optimized chunks
-const chunks = await steward.chunkDocument(largeDocument, {
-  maxChunkTokens: 500,
-  overlap: 50,
-  preserveStructure: true
-});
-```
-
-### 3. API Response Processing
-
-```typescript
-// Externalize large API responses
-const result = await steward.externalize({
-  toolName: 'database_query',
-  result: queryResult,  // 10,000 rows
-  summaryPrompt: 'Count by status, list top 5 errors'
-});
-```
-
-## 📦 Packages
-
-| Package | Description | Install |
-|---------|-------------|---------|
-| `context-steward` | Core library (JS/TS) | `npm install context-steward` |
-| `context-steward` | Core library (Python) | `pip install context-steward` |
-| `@context-steward/mcp` | MCP server | `npm install @context-steward/mcp` |
-| `@context-steward/express` | Express middleware | `npm install @context-steward/express` |
-
-## 🤝 Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-## 📄 License
-
-MIT License - see [LICENSE](./LICENSE).
-
+---
+name: database-conventions
+description: SQL naming conventions and query patterns for PostgreSQL.
+triggers: [sql, postgres, migration, schema, database]
 ---
 
-**Built with ❤️ by [Bouletteproof](https://bouletteproof.com)**
+# Database Conventions
 
-⭐ Star us if Context Steward saves you tokens!
+- Tables: plural snake_case
+- Always parameterize inputs
+- Add EXPLAIN ANALYZE for queries touching >10K rows
+```
+
+## MCP tools
+
+**Core**
+
+| Tool | Description |
+| --- | --- |
+| `load_skills` | Match and return skills for a task. Returns `contextId` for feedback. |
+| `list_skills` | Show all skills with token counts and effectiveness scores. |
+| `add_skill` | Install a skill from URL or local path. |
+| `estimate_tokens` | Count tokens in text or a file. |
+| `pack_context` | Fit system + messages + skills into a token budget. Batch/programmatic use. |
+
+**Feedback**
+
+| Tool | Description |
+| --- | --- |
+| `report_outcome` | Report what happened: `praised`, `used_as_is`, `revised`, `rejected`, `redone_by_user`. Drives skill improvement. |
+| `get_skill_scores` | View aggregated scores, trends, and tool pairings per skill. |
+| `import_scores` | Import external quality scores (CI, agent platforms) into skill improvement. Inbound only. |
+
+## Token budgets
+
+| Model | Context | 10 skills eager | 1 skill lazy | Verdict |
+| --- | --- | --- | --- | --- |
+| Claude Sonnet 4 | 200K | ~15K (8%) | ~1.5K | Saves cost |
+| Gemini Flash | 1M | ~15K (<2%) | ~1.5K | Saves cost |
+| Codestral | 32K | ~15K (47%) | ~1.5K | **Lazy essential** |
+| Ollama local | 4–32K | Often impossible | ~1.5K | **Only viable approach** |
+
+## Why not stuff skills in the system prompt?
+
+We ran an 88-execution experiment comparing agent output quality with and without skill checklists pre-loaded into the system prompt. Each execution was scored by a structured quality grader against the objective and constraints the agent was given.
+
+Result: **mean score 0.608 → 0.610**. No measurable improvement. The models ignored upfront instructions buried in large system prompts.
+
+Dynamic loading — serving the right skill at the right moment, near the point of generation — saves cost and keeps context clean. On a 32K model: 5 pre-loaded skills (8K tokens) vs 1 dynamic skill (1.5K) = working prompt vs truncation.
+
+## Self-improving skills
+
+Skills learn from both success and failure through observable signals.
+
+When `report_outcome` receives `praised` with notes about what worked, context-steward appends a `[STRENGTH]` entry to the skill's `## Learned` section. When it receives `revised`, `rejected`, or `redone_by_user` with notes about what went wrong, it appends a `[WEAKNESS]` entry. `used_as_is` is recorded in the outcome store but doesn't modify the skill file — neutral outcomes are noise.
+
+Next time that skill is served, it includes its own history of what works and what doesn't.
+
+```
+## Learned
+- [STRENGTH:2026-04-10] Score 0.95 on "api refactor": Clean decomposition into small focused edits with explicit file paths
+- [WEAKNESS:2026-04-10] Score 0.40 on "large file edit": Generated monolithic 300-line component without type hints
+```
+
+Entries are suggestions, not overrides. You can edit, delete, or ignore them by hand — the skill file is yours. The conversation itself is the data; the automation is there to make the data useful.
+
+## External score import
+
+context-steward can import scores from external systems (CI pipelines, agent platforms, quality scoring tools) via `import_scores`. No data leaves the system — this is inbound only.
+
+```
+import_scores({
+  source: "ci-pipeline",
+  scores: [
+    { slug: "typescript", score: 0.92, notes: "All tests passed, clean decomposition" },
+    { slug: "database", score: 0.35, notes: "Query missing index, caused timeout" }
+  ]
+})
+```
+
+The same `[STRENGTH]`/`[WEAKNESS]` entries are appended to the skill files. Useful when you have a scoring system that runs outside the conversation — CI, automated reviews, production metrics.
+
+## How this compares
+
+| | context-steward | Native Claude skills | Cursor rules | Static system prompts |
+| --- | --- | --- | --- | --- |
+| Skill format | Anthropic v2 SKILL.md | Anthropic v2 SKILL.md | `.cursorrules` (custom) | Free-form |
+| Loading | Lazy, on-demand | Eager (all at once) | Eager | Eager |
+| Learning from outcomes | Yes, via signals | No | No | No |
+| External score import | Yes | No | No | No |
+| Works across LLMs | Yes (MCP) | Claude only | Cursor only | Yes |
+
+Native Claude skills are a good starting point if you're Claude-only and don't need feedback. context-steward adds the portable MCP surface, the lazy-load mechanism, and the learning loop.
+
+## What this doesn't do
+
+- It does not route tasks across LLMs. That's a separate concern — use your own router or orchestration layer.
+- It does not manage long-conversation memory. That's a different primitive; the skill library is deliberately narrower.
+- It does not score skills using an LLM. It receives observable signals (or imports external scores) and maps them deterministically. No self-judgement.
+- It does not revise your skill files — it appends learning entries. The skill files remain yours to edit.
+
+## Telemetry
+
+None — the server phones no home. No outbound HTTP, no analytics, no third-party transmission.
+
+It *does* keep a local record of what you asked and how it went, because that's what powers the learning loop. Specifically:
+
+- Outcome rows live in `~/.context-steward/outcomes.db` (SQLite) — one row per `report_outcome` call, containing the context id, matched skill slugs, signal, derived score, your `intent`, and your `notes`.
+- Learnings append to your `SKILL.md` files as dated `[STRENGTH]` / `[WEAKNESS]` entries under a `## Learned` section, including the notes you provided.
+
+Both are yours. `context-steward reset-scores` clears the SQLite database. Skill files are just files in your workspace — edit or delete them like any other markdown.
+
+If you don't want any local history — for example you're running this inside an agent handling sensitive client work — set `persistence: false` in `steward.config.json`:
+
+```json
+{
+  "skillsDir": ".skills",
+  "defaultBudget": 100000,
+  "persistence": false
+}
+```
+
+In ephemeral mode no SQLite file is created, no skill-file writes happen, and nothing survives process restart. You lose the learning loop in exchange; skill routing still works, but scores don't accumulate. The startup log reports ephemeral status so you can verify.
+
+## CLI
+
+```
+context-steward init              # Create .skills/ and config
+context-steward serve             # Start MCP server (stdio)
+context-steward list              # Show skills with token counts
+context-steward scores            # Skill effectiveness report
+context-steward estimate <file>   # Token estimate
+context-steward reset-scores      # Clear outcome data
+```
+
+Built and maintained by [Bouletteproof](https://bouletteproof.com).
+
+## License
+
+MIT — Copyright 2026 Bouletteproof Ltd.
